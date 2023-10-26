@@ -9,5 +9,6 @@ setup(
         "rebound==3.28.4",
         "stable-baselines3==2.1.0",
         "tensorboard==2.15.0",
+        "sb3-contrib==2.1.0",
     ],
 )
