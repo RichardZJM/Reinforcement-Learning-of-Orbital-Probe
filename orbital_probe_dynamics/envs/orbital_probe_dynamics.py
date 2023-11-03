@@ -70,6 +70,11 @@ class OrbitalProbeEnv(gym.Env):
     def render(self):
         return self._render_frame()
 
+    def close(self):
+        if self.window is not None:
+            pygame.display.quit()
+            pygame.quit()
+
     def _render_frame(self):
         if self.window is None:
             pygame.init()
@@ -83,14 +88,18 @@ class OrbitalProbeEnv(gym.Env):
 
         # Rescale the pixel ratio and positions based on the furtherst bodies
         bodyPositionsAU = self._getBodyPositions()
-        bounds = np.array([np.min(bodyPositionsAU), np.max(bodyPositionsAU)])
-        bounds = bounds * 1.5  # Strech the bounds to get some buffer between the edge
-        conversionRatio = self.window_size / (bounds[1] - bounds[0])
-        bodyPositionsPX = (bodyPositionsAU - bounds[0]) * conversionRatio
+        maxBounds = np.array([np.min(bodyPositionsAU), np.max(bodyPositionsAU)])
+        maxBounds *= 1.2  # Strech the bounds to get some buffer between the edge
+        conversionRatio = self.window_size / np.max(np.abs(maxBounds))
+        bodyPositionsPX = (bodyPositionsAU * conversionRatio) + self.window_size / 2
 
+        # Draw the SUN
+        pygame.draw.circle(canvas, (255, 234, 0), np.full(2, self.window_size / 2), 10)
         # Draw all the bodies
         for bodyPos in bodyPositionsPX:
-            pygame.draw.circle(canvas, (0, 0, 255), bodyPos, 5)
+            pygame.draw.circle(canvas, (0, 0, 255), bodyPos - 6 / 2, 6)
+
+        self.sim.integrate(self.sim.t + 0.2)
 
         # The following line copies our drawings from `canvas` to the visible window
         self.window.blit(canvas, canvas.get_rect())
@@ -99,11 +108,6 @@ class OrbitalProbeEnv(gym.Env):
 
         # Update the clock based on the render framerate
         self.clock.tick(self.metadata["render_fps"])
-
-    def close(self):
-        if self.window is not None:
-            pygame.display.quit()
-            pygame.quit()
 
     def _initSolarSystem(self) -> None:
         def genRandAngle() -> float:
@@ -204,7 +208,7 @@ class OrbitalProbeEnv(gym.Env):
         self.sim.add(
             m=0,
             r=1.5e-10,  # 20 m radius
-            a=0.000281848931423,  # Geosynchronous Orbit
+            a=0.000281848931423 * 1000,  # Geosynchronous Orbit
             theta=genRandAngle(),
             primary=self.sim.particles[3],  # Orbiting Earth
         )
