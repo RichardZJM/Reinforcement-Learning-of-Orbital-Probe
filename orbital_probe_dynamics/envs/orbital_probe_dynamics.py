@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import gymnasium as gym
 from gymnasium import spaces
 
+import orbital_probe_dynamics.envs.planetaryProperties as planetProp
+
 
 class OrbitalProbeEnv(gym.Env):
     metadata = {"render_modes": ["human"], "render_fps": 60}
@@ -124,93 +126,22 @@ class OrbitalProbeEnv(gym.Env):
             """
             return self.np_random.uniform(low=0, high=2 * np.pi)
 
-        # Now, add the orbits of each of the planets, with no incclination (ie. 2D)
+        # Now, add the orbits of each of the bodies, with no inclination (ie. 2D)
 
         self.sim.add(m=1.0, r=0.005)  # Sun
 
-        self.sim.add(
-            m=3.3011e23 * 5.02785e-31,
-            r=2439.7 * 6.68459e-9,
-            a=0.307499,
-            e=0.205630,
-            omega=48.331 / 180 * np.pi,
-            theta=genRandAngle(),
-        )  # Mercury
-
-        self.sim.add(
-            m=4.8675e24 * 5.02785e-31,
-            r=6051.8 * 6.68459e-9,
-            a=0.723332,
-            e=0.006772,
-            omega=54.884 / 180 * np.pi,
-            theta=genRandAngle(),
-        )  # Venus
-
-        self.sim.add(
-            m=5.972168e24 * 5.02785e-31,
-            r=6371.0 * 6.68459e-9,
-            a=1.0003,
-            e=0.0167086,
-            omega=114.20783 / 180 * np.pi,
-            theta=genRandAngle(),
-        )  # Earth
-
-        self.sim.add(
-            m=6.4171e23 * 5.02785e-31,
-            r=3389.5 * 6.68459e-9,
-            a=1.52368055,
-            e=0.0934,
-            omega=286.5 / 180 * np.pi,
-            theta=genRandAngle(),
-        )  # Mars
-
-        self.sim.add(
-            m=1.8982e27 * 5.02785e-31,
-            r=69911 * 6.68459e-9,
-            a=5.2038,
-            e=0.0489,
-            omega=273.867 / 180 * np.pi,
-            theta=genRandAngle(),
-        )  # Jupiter
-
-        self.sim.add(
-            m=5.6834e26 * 5.02785e-31,
-            r=58232 * 6.68459e-9,
-            a=9.5826,
-            e=0.0565,
-            omega=339.392 / 180 * np.pi,
-            theta=genRandAngle(),
-        )  # Saturn
-
-        self.sim.add(
-            m=8.6810e25 * 5.02785e-31,
-            r=25362 * 6.68459e-9,
-            a=19.19126,
-            e=0.04717,
-            omega=96.998857 / 180 * np.pi,
-            theta=genRandAngle(),
-        )  # Uranus
-
-        self.sim.add(
-            m=1.02413e26 * 5.02785e-31,
-            r=24622 * 6.68459e-9,
-            a=30.07,
-            e=0.008678,
-            omega=273.187 / 180 * np.pi,
-            theta=genRandAngle(),
-        )  # Neptune
-
-        self.sim.add(
-            m=1.303e22 * 5.02785e-31,
-            r=1188.3 * 6.68459e-9,
-            a=39.482,
-            e=0.2488,
-            omega=113.834 / 180 * np.pi,
-            theta=genRandAngle(),
-        )  # Pluto
+        # Add in the planets from the property sheet
+        for planetProperties in planetProp.orbitalProperties:
+            self.sim.add(
+                m=planetProperties["m"],
+                r=planetProperties["r"],
+                a=planetProperties["a"],
+                e=planetProperties["e"],
+                omega=planetProperties["omega"],
+                theta=genRandAngle(),
+            )
 
         # Add the spaceship in orbit around the earth
-
         self.sim.add(
             m=0,
             r=1.5e-10,  # 20 m radius
