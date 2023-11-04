@@ -12,7 +12,7 @@ import orbital_probe_dynamics.envs.planetaryProperties as planetProp
 class OrbitalProbeEnv(gym.Env):
     metadata = {"render_modes": ["human"], "render_fps": 60}
 
-    def __init__(self, render_mode=None, tmax=1e4, window_size=512) -> None:
+    def __init__(self, render_mode=None, tmax=1e4, window_size=1024) -> None:
         super().__init__()
         self.tmax = tmax  # Set the maximum sim time allowed, (1 year = 2pi)
 
@@ -91,22 +91,37 @@ class OrbitalProbeEnv(gym.Env):
         # Rescale the pixel ratio and positions based on the furthest bodies
         # Stretch the bounds to get some buffer between the window edge
         bodyPositionsAU = self._getBodyPositions()
-        maxBounds = np.max(np.abs(bodyPositionsAU)) * 1.1
+        maxBounds = np.max(np.abs(bodyPositionsAU)) * 2
         maxBounds = 50  #    Temporarily set a maximum bound
         conversionRatio = self.window_size / 2 / maxBounds
         bodyPositionsPX = (bodyPositionsAU * conversionRatio) + self.window_size / 2
 
         # Draw the SUN
-        pygame.draw.circle(canvas, (255, 234, 0), np.full(2, self.window_size / 2), 10)
+        pygame.draw.circle(
+            canvas,
+            planetProp.renderColourProperties[0],
+            np.full(2, self.window_size / 2),
+            planetProp.renderSizeProperties[0],
+        )
+
         # Draw all the planets
-        for bodyPos in bodyPositionsPX[:-1]:
-            pygame.draw.circle(canvas, (0, 0, 255), bodyPos, 6)
+        for bodyPos, colour, size in zip(
+            bodyPositionsPX[:-1],
+            planetProp.renderColourProperties[1:],
+            planetProp.renderSizeProperties[1:],
+        ):
+            pygame.draw.circle(canvas, colour, bodyPos, size)
 
         # Draw the spaceship
-        pygame.draw.circle(canvas, (255, 0, 0), bodyPositionsPX[-1], 6)
+        pygame.draw.circle(
+            canvas,
+            planetProp.renderColourProperties[-1],
+            bodyPositionsPX[-1],
+            planetProp.renderSizeProperties[-1],
+        )
 
         self.sim.integrate(
-            self.sim.t + self.dt
+            self.sim.t + 1  # self.dt
         )  # Temporarily animate in the render (should be step)
 
         # The following line copies our drawings from `canvas` to the visible window
@@ -119,7 +134,7 @@ class OrbitalProbeEnv(gym.Env):
 
     def _initSolarSystem(self) -> None:
         def genRandAngle() -> float:
-            """Helper funciton to generate random angles
+            """Helper function to generate random angles
 
             Returns:
                 float: Random angle in circle (rad)

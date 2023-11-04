@@ -2,7 +2,22 @@
 """
 import numpy as np
 
-renderProperties = {}
+renderColourProperties = [
+    (253, 184, 19),  # SUN
+    (177, 173, 173),  # Mecury
+    (255, 69, 0),  # Venus
+    (0, 0, 160),  # Earth
+    (156, 46, 53),  # Mars
+    (255, 140, 0),  # Jupiter
+    (222, 184, 135),  # Saturn
+    (198, 211, 227),  # Uranus
+    (63, 84, 186),  # Neptune
+    (221, 196, 175),  # Pluto
+    (255, 255, 255),  # Player
+]
+
+renderSizeProperties = [14, 4, 5, 6, 5, 10, 8, 7, 8, 4, 2]
+
 orbitalProperties = [
     {
         "m": 3.3011e23 * 5.02785e-31,
