@@ -12,7 +12,7 @@ model = PPO("MultiInputPolicy", env, verbose=1)
 
 obs = env.reset()
 # print(obs)
-for i in range(150):
+for i in range(900):
     env.render()
 
 # for i in range(1000):

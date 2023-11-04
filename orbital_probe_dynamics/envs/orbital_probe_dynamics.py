@@ -8,7 +8,7 @@ from gymnasium import spaces
 
 
 class OrbitalProbeEnv(gym.Env):
-    metadata = {"render_modes": ["human"], "render_fps": 30}
+    metadata = {"render_modes": ["human"], "render_fps": 60}
 
     def __init__(self, render_mode=None, tmax=1e4, window_size=512) -> None:
         super().__init__()
@@ -84,22 +84,28 @@ class OrbitalProbeEnv(gym.Env):
             self.clock = pygame.time.Clock()
 
         canvas = pygame.Surface((self.window_size, self.window_size))
-        canvas.fill((0, 0, 0))  # Set a
+        canvas.fill((0, 0, 0))  # Set black for space background
 
-        # Rescale the pixel ratio and positions based on the furtherst bodies
+        # Rescale the pixel ratio and positions based on the furthest bodies
+        # Stretch the bounds to get some buffer between the window edge
         bodyPositionsAU = self._getBodyPositions()
-        maxBounds = np.array([np.min(bodyPositionsAU), np.max(bodyPositionsAU)])
-        maxBounds *= 1.2  # Strech the bounds to get some buffer between the edge
-        conversionRatio = self.window_size / np.max(np.abs(maxBounds))
+        maxBounds = np.max(np.abs(bodyPositionsAU)) * 1.1
+        maxBounds = 50  #    Temporarily set a maximum bound
+        conversionRatio = self.window_size / 2 / maxBounds
         bodyPositionsPX = (bodyPositionsAU * conversionRatio) + self.window_size / 2
 
         # Draw the SUN
         pygame.draw.circle(canvas, (255, 234, 0), np.full(2, self.window_size / 2), 10)
-        # Draw all the bodies
-        for bodyPos in bodyPositionsPX:
-            pygame.draw.circle(canvas, (0, 0, 255), bodyPos - 6 / 2, 6)
+        # Draw all the planets
+        for bodyPos in bodyPositionsPX[:-1]:
+            pygame.draw.circle(canvas, (0, 0, 255), bodyPos, 6)
 
-        self.sim.integrate(self.sim.t + 0.2)
+        # Draw the spaceship
+        pygame.draw.circle(canvas, (255, 0, 0), bodyPositionsPX[-1], 6)
+
+        self.sim.integrate(
+            self.sim.t + self.dt
+        )  # Temporarily animate in the render (should be step)
 
         # The following line copies our drawings from `canvas` to the visible window
         self.window.blit(canvas, canvas.get_rect())
@@ -208,7 +214,7 @@ class OrbitalProbeEnv(gym.Env):
         self.sim.add(
             m=0,
             r=1.5e-10,  # 20 m radius
-            a=0.000281848931423 * 1000,  # Geosynchronous Orbit
+            a=0.000281848931423 * 10,  # Geosynchronous Orbit
             theta=genRandAngle(),
             primary=self.sim.particles[3],  # Orbiting Earth
         )
