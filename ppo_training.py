@@ -15,6 +15,8 @@ obs = env.reset()
 for i in range(900):
     env.render()
 
+env.close()
+
 # for i in range(1000):
 #     action, _state = model.predict(obs, deterministic=True)
 #     obs, reward, done, info = vec_env.step(action)
