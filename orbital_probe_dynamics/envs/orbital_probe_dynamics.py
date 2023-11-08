@@ -16,10 +16,12 @@ class OrbitalProbeEnv(gym.Env):
 
     metadata = {
         "render_modes": ["human"],
-        "render_fps": 60,
+        "render_fps": 120,
     }  # supported render modes and fps
 
-    def __init__(self, render_mode=None, tmax=1e4, window_size=1024) -> None:
+    def __init__(
+        self, render_mode=None, dt=2 * np.pi / 365, tmax=1e4, window_size=1024
+    ) -> None:
         """Initialization of orbital probe enviroment.
 
         Args:
@@ -28,6 +30,7 @@ class OrbitalProbeEnv(gym.Env):
             window_size (int, optional): Window size for pygame rendering. Defaults to 1024.
         """
         super().__init__()
+        self.dt = dt
         self.tmax = tmax  # Set the maximum sim time allowed, (1 year = 2pi)
 
         # Obs is Positions and velocities of each of the 9 planets and the space probe in 2-D
@@ -40,20 +43,21 @@ class OrbitalProbeEnv(gym.Env):
                     low=-np.inf, high=np.inf, shape=(10, 2), dtype=np.float64
                 ),
                 "timeElapsed": spaces.Box(
-                    low=0, high=np.inf, shape=(1, 1), dtype=np.float64
+                    low=0, high=np.inf, shape=(1,), dtype=np.float64
                 ),
+                "fuel": spaces.Box(low=0, high=1.0, shape=(1,), dtype=np.float64),
             }
         )
 
         # Action is direction and magnitude of thrust
-        self.action_space = spaces.Box(low=0, high=1, shape=(2, 1), dtype=np.float32)
+        self.action_space = spaces.Box(low=0, high=1.0, shape=(2,), dtype=np.float64)
 
         # Set variables for the Pygame rendering
         self.window_size = window_size
         self.window = None
         self.clock = None
 
-    def reset(self, seed: int = None, options={"dt": 2 * np.pi / 365}) -> tuple:
+    def reset(self, seed: int = None, options={}) -> tuple:
         """A reset function to begin a new episode for training.
 
         Args:
@@ -69,11 +73,16 @@ class OrbitalProbeEnv(gym.Env):
         self.sim = None  # Ensure the previous simulation is cleared
         self.sim = rebound.Simulation()
         self.sim.integrator = "mercurius"
-        self.dt = options["dt"]
-        self.sim.dt = options["dt"]  # Default timestep (decision interval is 1 day)
+        self.sim.dt = self.dt  # Default timestep (decision interval is 1 day)
         self.sim.boundary = "open"
         self.sim.configure_box(200)
+        self.sim.additional_forces = self._rocketThrustForce
+        self.sim.force_is_velocity_dependent = 1
         self._initSolarSystem()
+
+        # Spaceship properties
+        self.fuel = 1
+        self.deltaV = np.array([0, 0], dtype="float64")
 
         # Plotting block, usedful for troubleshooting
         # rebound.OrbitPlot(self.sim)
@@ -82,7 +91,7 @@ class OrbitalProbeEnv(gym.Env):
         return self._get_obs(), self._get_info()
 
     def step(self, action):
-        """_summary_
+        """Takes a step in the simulation, getting the next state and reward
 
         Args:
             action (dict): A dict of the actions according to the action space set out in the init function.
@@ -90,10 +99,31 @@ class OrbitalProbeEnv(gym.Env):
         Returns:
             tuple: a tuple containing the next state observation, the reward gain, whether the simulation has terminated, whether the truncation condition is satisfied (always False for our enviroment), and additional info
         """
-        # Perform some calculations
-        terminated = False
-        reward = 69
 
+        # Start with a net neutral reward
+        reward = 0
+
+        projectedFuel = self.fuel - action[0]
+        remaningFuel = max(0, projectedFuel)
+        reward += (
+            remaningFuel - projectedFuel
+        )  # Punish the agent for trying to use more fuel than it has
+        deltaVMagnitude = min(action[0], self.fuel)
+        self.fuel = remaningFuel
+
+        # Convert input into desired deltaV
+        self.deltaV[0] = np.cos(action[1] * 2 * np.pi)
+        self.deltaV[1] = np.sin(action[1] * 2 * np.pi)
+        self.deltaV *= (
+            deltaVMagnitude * planetProp.spaceShipThrustProperties["availableDeltaV"]
+        )
+
+        self.fuel -= 0
+        terminated = False
+        reward = 69.0
+
+        self.sim.step()
+        print(self._get_obs())
         return (
             self._get_obs(),
             reward,
@@ -110,6 +140,7 @@ class OrbitalProbeEnv(gym.Env):
             pygame.init()
             pygame.display.set_caption("Mission to Pluto")
             pygame.display.init()
+            pygame.font.init()
             self.window = pygame.display.set_mode((self.window_size, self.window_size))
 
         # Set the clock. Used later to match the requested FPS.
@@ -152,12 +183,23 @@ class OrbitalProbeEnv(gym.Env):
             planetProp.renderSizeProperties[-1],
         )
 
-        self.sim.integrate(
-            self.sim.t + 1  # self.dt
-        )  # Temporarily animate in the render (should be step)
+        # Draw the current time and fuel
+        gameFont = pygame.font.SysFont("Comic Sans MS", 40)
+        timeSurface = gameFont.render(
+            "Year: " + format(self._getTimeElapsed() / 2 / np.pi, ".2f"),
+            False,
+            (255, 255, 255),
+        )
+        fuelSurface = gameFont.render(
+            "Fuel: " + format(self.fuel * 100, ".1f") + "%",
+            False,
+            (255, 255, 255),
+        )
 
         # The following line copies our drawings from `canvas` to the visible window
         self.window.blit(canvas, canvas.get_rect())
+        self.window.blit(timeSurface, (0, 0))
+        self.window.blit(fuelSurface, (0, 50))
         pygame.event.pump()
         pygame.display.update()
 
@@ -213,6 +255,11 @@ class OrbitalProbeEnv(gym.Env):
         # f = angle of the starting position of the satellite to the perihelion
         # theta = starting angle of the satelitle relative to the +x axis (use either f or theta, not both)
 
+    def _rocketThrustForce(self, sim) -> None:
+        ps = self.sim.particles
+        ps[-1].vx += self.deltaV[0]
+        ps[-1].vy += self.deltaV[1]
+
     def _getBodyPositions(self) -> np.array:
         """Returns the body positions of the simulation
 
@@ -250,7 +297,8 @@ class OrbitalProbeEnv(gym.Env):
         return {
             "bodyPositions": self._getBodyPositions(),
             "bodyVelocities": self._getBodyVelocities(),
-            "timeElapsed": np.array(self._getTimeElapsed()),
+            "timeElapsed": np.array([self._getTimeElapsed()], dtype="float64"),
+            "fuel": np.array([self.fuel], dtype="float64"),
         }
 
     def _get_info(self) -> dict:
@@ -259,4 +307,4 @@ class OrbitalProbeEnv(gym.Env):
         Returns:
             dict: Dict of additonal information.
         """
-        return {"Time Elapsed": self._getTimeElapsed()}
+        return {}  # {"Time Elapsed": self._getTimeElapsed()}

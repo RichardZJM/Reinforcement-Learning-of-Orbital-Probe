@@ -1,4 +1,4 @@
-""" A series of constant depiciting render and planetary properties for the solar system. 
+""" A series of constants depiciting render and planetary properties for the solar system. 
 """
 import numpy as np
 
@@ -16,7 +16,7 @@ renderColourProperties = [
     (255, 255, 255),  # Player
 ]
 
-renderSizeProperties = [14, 4, 5, 6, 5, 10, 8, 7, 8, 4, 2]
+renderSizeProperties = 3 * np.array([14, 4, 5, 6, 5, 10, 8, 7, 8, 4, 2])
 
 orbitalProperties = [
     {
@@ -83,3 +83,8 @@ orbitalProperties = [
         "omega": 113.834 / 180 * np.pi,
     },  # Pluto
 ]
+
+
+spaceShipThrustProperties = {
+    "availableDeltaV": 25000 / 29800  # Convert m/s to rebound units
+}
