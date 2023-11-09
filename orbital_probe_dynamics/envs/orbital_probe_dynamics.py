@@ -67,6 +67,7 @@ class OrbitalProbeEnv(gym.Env):
         Returns:
             tuple: A tuple that contains the initial observation and extra info of the new initial state.
         """
+        seed = 69  # Temporarily force a deterministic enviroment for testing
         super().reset(seed=seed)  # Reconcile seeding in enviroment
 
         # Prepare a new simulation and set the integrator options
@@ -109,7 +110,7 @@ class OrbitalProbeEnv(gym.Env):
         reward = 0
         terminated = False
 
-        action[0] = action[0] / 100
+        action[0] = action[0] / 10
 
         projectedFuel = self.fuel - action[0]
         remaningFuel = max(0, projectedFuel)
@@ -117,11 +118,11 @@ class OrbitalProbeEnv(gym.Env):
             projectedFuel - remaningFuel
         ) / 1000  # Punish the agent for trying to use more fuel than it has
         deltaVMagnitude = min(action[0], self.fuel)
-        self.fuel = remaningFuel
+        self.fuel = max(0, projectedFuel)
 
         # print(self.fuel)
         reward = 0
-        reward -= action[0] * 10
+        reward -= action[0] / 100000
 
         # Convert input into desired deltaV
         self.deltaV[0] = np.cos(action[1] * 2 * np.pi)
@@ -135,9 +136,10 @@ class OrbitalProbeEnv(gym.Env):
             self.sim.step()
         except rebound.Encounter as error:
             print(error)
-            print("too close!")
-            reward -= 3
-            terminated = True
+
+            # print("too close!")
+            # reward -= 3
+            # terminated = True
 
         # Find the distance between the spaceship and pluto
         dp = self.sim.particles[-1] - self.sim.particles[-2]
@@ -303,7 +305,7 @@ class OrbitalProbeEnv(gym.Env):
     def _distanceReward(self, distance: float) -> float:
         def rewardFunction(x: float):
             powerTerm = 1
-            return -(x**2)
+            return 1 / x
 
         # return max(-distance + 100, 0)
 

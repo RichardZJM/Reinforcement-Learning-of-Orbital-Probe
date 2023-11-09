@@ -8,27 +8,29 @@ env = gym.make("orbitalProbeDynamics-v1", render_mode=None, window_size=1024)
 
 
 policy_kwargs = dict(
-    net_arch=dict(pi=[256, 256, 128], vf=[256, 256, 256]),
+    net_arch=dict(pi=[32, 32], vf=[32, 32]),
 )
 model = PPO("MultiInputPolicy", env, verbose=1, policy_kwargs=policy_kwargs)
 
 ### ===== To train a new model =====
-# model.learn(total_timesteps=1e5)
-# model.save("tempModels/trial1")
+model = PPO.load("tempModels/trial1")
+model.set_env(env)
+model.learn(total_timesteps=1e7)
+model.save("tempModels/trial1")
 
 # #### ===== To load an existing model =====
-env = gym.make("orbitalProbeDynamics-v1", render_mode="human", window_size=1024)
-model = PPO.load("tempModels/trial1")
-print(model)
+# env = gym.make("orbitalProbeDynamics-v1", render_mode="human", window_size=1024)
+# model = PPO.load("tempModels/trial1")
+# print(model)
 
 obs, _ = env.reset()
 print(obs)
-for i in range(10000):
+for i in range(30000):
     action, _states = model.predict(obs)
 
     obs, rewards, dones, info, _ = env.step(action)
 
-    # print(action, rewards)
+    print(action, rewards)
     # obs = env.step(np.array([0.3, 1]))
     env.render()
 
