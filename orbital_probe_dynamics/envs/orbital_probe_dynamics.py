@@ -16,7 +16,7 @@ class OrbitalProbeEnv(gym.Env):
 
     metadata = {
         "render_modes": ["human"],
-        "render_fps": 120,
+        "render_fps": 256,
     }  # supported render modes and fps
 
     def __init__(
@@ -45,7 +45,7 @@ class OrbitalProbeEnv(gym.Env):
                 "timeElapsed": spaces.Box(
                     low=0, high=np.inf, shape=(1,), dtype=np.float64
                 ),
-                "fuel": spaces.Box(low=0, high=1.0, shape=(1,), dtype=np.float64),
+                "fuel": spaces.Box(low=0, high=1, shape=(1,), dtype=np.float64),
             }
         )
 
@@ -73,16 +73,21 @@ class OrbitalProbeEnv(gym.Env):
         self.sim = None  # Ensure the previous simulation is cleared
         self.sim = rebound.Simulation()
         self.sim.integrator = "mercurius"
-        self.sim.dt = self.dt  # Default timestep (decision interval is 1 day)
+        self.sim.dt = self.dt  # Default timestep/ decision interval is 1 day
         self.sim.boundary = "open"
-        self.sim.configure_box(200)
+        self.sim.configure_box(2000)
         self.sim.additional_forces = self._rocketThrustForce
         self.sim.force_is_velocity_dependent = 1
+        self.sim.collision = "none"
+        # self.sim.exit_max_distance = 50.0
+        self.sim.ri_mercurius.hillfac = 9
         self._initSolarSystem()
 
         # Spaceship properties
         self.fuel = 1
         self.deltaV = np.array([0, 0], dtype="float64")
+        dp = self.sim.particles[-1] - self.sim.particles[-2]
+        self.closestEncounter = np.sqrt(dp.x**2 + dp.y**2)
 
         # Plotting block, usedful for troubleshooting
         # rebound.OrbitPlot(self.sim)
@@ -102,14 +107,21 @@ class OrbitalProbeEnv(gym.Env):
 
         # Start with a net neutral reward
         reward = 0
+        terminated = False
+
+        action[0] = action[0] / 100
 
         projectedFuel = self.fuel - action[0]
         remaningFuel = max(0, projectedFuel)
         reward += (
-            remaningFuel - projectedFuel
-        )  # Punish the agent for trying to use more fuel than it has
+            projectedFuel - remaningFuel
+        ) / 1000  # Punish the agent for trying to use more fuel than it has
         deltaVMagnitude = min(action[0], self.fuel)
         self.fuel = remaningFuel
+
+        # print(self.fuel)
+        reward = 0
+        reward -= action[0] * 10
 
         # Convert input into desired deltaV
         self.deltaV[0] = np.cos(action[1] * 2 * np.pi)
@@ -118,12 +130,40 @@ class OrbitalProbeEnv(gym.Env):
             deltaVMagnitude * planetProp.spaceShipThrustProperties["availableDeltaV"]
         )
 
-        self.fuel -= 0
-        terminated = False
-        reward = 69.0
+        # Try to step and stop if things get too close
+        try:
+            self.sim.step()
+        except rebound.Encounter as error:
+            print(error)
+            print("too close!")
+            reward -= 3
+            terminated = True
 
-        self.sim.step()
-        print(self._get_obs())
+        # Find the distance between the spaceship and pluto
+        dp = self.sim.particles[-1] - self.sim.particles[-2]
+        distance = np.sqrt(dp.x**2 + dp.y**2)
+        reward += self._distanceReward(distance)
+        self.closestEncounter = min(distance, self.closestEncounter)
+
+        if distance <= 0.1:
+            reward += 1
+            reward += self.fuel * 3
+            terminated = True
+        if self._getTimeElapsed() > self.tmax:
+            terminated = True
+
+        if len(self.sim.particles[1:]) == 9:
+            pos = self.lastPositions
+            vs = self.lastVel
+            print(pos[-2])
+            print(pos[-1])
+            print(vs[-2])
+            print(vs[-1])
+            for i in range(10000):
+                self.render()
+        self.lastPositions = self._getBodyPositions()
+        self.lastVel = self._getBodyVelocities()
+
         return (
             self._get_obs(),
             reward,
@@ -155,7 +195,7 @@ class OrbitalProbeEnv(gym.Env):
         # Stretch the bounds to get some buffer between the window edge
         bodyPositionsAU = self._getBodyPositions()
         # maxBounds = np.max(np.abs(bodyPositionsAU)) * 2
-        maxBounds = 50  #    Temporarily set a maximum bound
+        maxBounds = 60  #    Temporarily set a maximum bound
         conversionRatio = self.window_size / 2 / maxBounds
         bodyPositionsPX = (bodyPositionsAU * conversionRatio) + self.window_size / 2
 
@@ -241,7 +281,7 @@ class OrbitalProbeEnv(gym.Env):
         self.sim.add(
             m=0,
             r=1.5e-10,  # 20 m radius
-            a=0.000281848931423 * 10,  # Geosynchronous Orbit
+            a=0.05,  # Geosynchronous Orbit *100
             theta=genRandAngle(),
             primary=self.sim.particles[3],  # Orbiting Earth
         )
@@ -259,6 +299,18 @@ class OrbitalProbeEnv(gym.Env):
         ps = self.sim.particles
         ps[-1].vx += self.deltaV[0]
         ps[-1].vy += self.deltaV[1]
+
+    def _distanceReward(self, distance: float) -> float:
+        def rewardFunction(x: float):
+            powerTerm = 1
+            return -(x**2)
+
+        # return max(-distance + 100, 0)
+
+        return max(
+            rewardFunction(distance) - rewardFunction(self.closestEncounter),
+            0,
+        )
 
     def _getBodyPositions(self) -> np.array:
         """Returns the body positions of the simulation

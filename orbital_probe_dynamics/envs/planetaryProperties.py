@@ -16,7 +16,7 @@ renderColourProperties = [
     (255, 255, 255),  # Player
 ]
 
-renderSizeProperties = 3 * np.array([14, 4, 5, 6, 5, 10, 8, 7, 8, 4, 2])
+renderSizeProperties = 2 * np.array([14, 4, 5, 6, 5, 10, 8, 7, 8, 4, 2])
 
 orbitalProperties = [
     {
@@ -86,5 +86,5 @@ orbitalProperties = [
 
 
 spaceShipThrustProperties = {
-    "availableDeltaV": 25000 / 29800  # Convert m/s to rebound units
+    "availableDeltaV": 50000 / 29800  # Convert m/s to rebound units
 }
