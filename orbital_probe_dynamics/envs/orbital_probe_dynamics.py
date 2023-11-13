@@ -67,7 +67,7 @@ class OrbitalProbeEnv(gym.Env):
         Returns:
             tuple: A tuple that contains the initial observation and extra info of the new initial state.
         """
-        # seed = 69  # Temporarily force a deterministic enviroment for testing
+        seed = 69  # Temporarily force a deterministic enviroment for testing
         super().reset(seed=seed)  # Reconcile seeding in enviroment
 
         # Prepare a new simulation and set the integrator options
@@ -87,8 +87,10 @@ class OrbitalProbeEnv(gym.Env):
         # Spaceship properties
         self.fuel = 1
         self.deltaV = np.array([0, 0], dtype="float64")
-        dp = self.sim.particles[-1] - self.sim.particles[-2]
-        self.closestEncounter = np.sqrt(dp.x**2 + dp.y**2)
+
+        # Find the initial distance to pluto
+        self.closestEncounter = self._getDistanceToPluto()
+        self.previousHighestEnergy = self._getSpaceshipEnergy()
 
         # Plotting block, usedful for troubleshooting
         # rebound.OrbitPlot(self.sim)
@@ -110,7 +112,9 @@ class OrbitalProbeEnv(gym.Env):
         reward = 0
         terminated = False
 
-        action[0] = action[0] / 10
+        action[0] = (
+            action[0] / 50
+        )  # Limit the agent to using 1/50th of his deltaV per day
 
         projectedFuel = self.fuel - action[0]
         remaningFuel = max(0, projectedFuel)
@@ -120,9 +124,10 @@ class OrbitalProbeEnv(gym.Env):
         deltaVMagnitude = min(action[0], self.fuel)
         self.fuel = max(0, projectedFuel)
 
-        # print(self.fuel)
         reward = 0
-        reward -= action[0] / 100000
+        reward -= (
+            action[0] / 300
+        )  # Punish the agent for using fuel (incentivizes it to save fuel for critical manuevers)
 
         # Convert input into desired deltaV
         self.deltaV[0] = np.cos(action[1] * 2 * np.pi)
@@ -137,15 +142,24 @@ class OrbitalProbeEnv(gym.Env):
         except rebound.Encounter as error:
             print(error)
 
-            # print("too close!")
-            # reward -= 3
-            # terminated = True
+        def rewardScalingFunction(value: float) -> float:
+            return -np.sqrt(value) / 7.07106781187 + 1
 
-        # Find the distance between the spaceship and pluto
-        dp = self.sim.particles[-1] - self.sim.particles[-2]
-        distance = np.sqrt(dp.x**2 + dp.y**2)
-        reward += self._distanceReward(distance)
-        self.closestEncounter = min(distance, self.closestEncounter)
+        # Find the distance to pluto, and dispense a reward
+        distance = self._getDistanceToPluto()
+        reward += self._progressivizeDistanceReward(
+            distance, self.closestEncounter, rewardScalingFunction
+        )
+        self.closestEncounter = min(
+            distance, self.closestEncounter
+        )  # Update the closest previous encounter
+
+        # We also reward the agent for gaining system energy
+        spaceshipEnergy = self._getSpaceshipEnergy()
+        reward += max(spaceshipEnergy - self.previousHighestEnergy, 0) / 2
+        self.previousHighestEnergy = max(
+            spaceshipEnergy, self.previousHighestEnergy
+        )  # Update the previous highest energy
 
         if distance <= 0.1:
             reward += 1
@@ -302,15 +316,39 @@ class OrbitalProbeEnv(gym.Env):
         ps[-1].vx += self.deltaV[0]
         ps[-1].vy += self.deltaV[1]
 
-    def _distanceReward(self, distance: float) -> float:
-        def rewardFunction(x: float):
-            powerTerm = 1
-            return 1 / x
+    def _getDistanceToPluto(self) -> float:
+        """Helper function: gets distance of spaceship from pluto
 
-        # return max(-distance + 100, 0)
+        Returns:
+            float: distance to pluto
+        """
+        dp = self.sim.particles[-1] - self.sim.particles[-2]
+        return np.sqrt(dp.x**2 + dp.y**2)
 
+    def _getSpaceshipEnergy(self) -> float:
+        potentialEnergy = 0
+        for body in self.sim.particles[:1]:
+            dp = body - self.sim.particles[-1]
+            potentialEnergy -= body.m / np.sqrt(dp.x**2 + dp.y**2)
+        speedSquared = self.sim.particles[-1].vx ** 2 + self.sim.particles[-1].vy ** 2
+
+        # Return the sum of the kinetic energy and potential energy
+        return potentialEnergy + speedSquared / 2
+
+    def _progressivizeDistanceReward(
+        self, currentValue: float, previousValue: float, rewardFunction: callable
+    ) -> float:
+        """Converts a final sparse reward distribution into a progressive set of rewards
+
+        Args:
+            currentValue (float): current distance
+            previousValue (float): previous distance
+
+        Returns:
+            float: reward to dispence
+        """
         return max(
-            rewardFunction(distance) - rewardFunction(self.closestEncounter),
+            rewardFunction(currentValue) - rewardFunction(previousValue),
             0,
         )
 
