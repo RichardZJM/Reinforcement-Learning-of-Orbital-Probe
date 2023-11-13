@@ -67,7 +67,7 @@ class OrbitalProbeEnv(gym.Env):
         Returns:
             tuple: A tuple that contains the initial observation and extra info of the new initial state.
         """
-        seed = 69  # Temporarily force a deterministic enviroment for testing
+        # seed = 69  # Temporarily force a deterministic enviroment for testing
         super().reset(seed=seed)  # Reconcile seeding in enviroment
 
         # Prepare a new simulation and set the integrator options
