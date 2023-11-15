@@ -15,12 +15,16 @@ class OrbitalProbeEnv(gym.Env):
     """
 
     metadata = {
-        "render_modes": ["human"],
+        "render_modes": ["human", "rgb_array"],
         "render_fps": 256,
     }  # supported render modes and fps
 
     def __init__(
-        self, render_mode=None, dt=2 * np.pi / 365, tmax=1e4, window_size=1024
+        self,
+        render_mode=None,
+        dt=2 * np.pi / 365,
+        tmax=2 * np.pi * 100,
+        window_size=1024,
     ) -> None:
         """Initialization of orbital probe enviroment.
 
@@ -57,7 +61,7 @@ class OrbitalProbeEnv(gym.Env):
         self.window = None
         self.clock = None
 
-    def reset(self, seed: int = None, options={}) -> tuple:
+    def reset(self, seed: int = None, options={"rendering": False}) -> tuple:
         """A reset function to begin a new episode for training.
 
         Args:
@@ -69,6 +73,7 @@ class OrbitalProbeEnv(gym.Env):
         """
         seed = 69  # Temporarily force a deterministic enviroment for testing
         super().reset(seed=seed)  # Reconcile seeding in enviroment
+        self.rendering = options["rendering"]
 
         # Prepare a new simulation and set the integrator options
         self.sim = None  # Ensure the previous simulation is cleared
@@ -76,7 +81,7 @@ class OrbitalProbeEnv(gym.Env):
         self.sim.integrator = "mercurius"
         self.sim.dt = self.dt  # Default timestep/ decision interval is 1 day
         self.sim.boundary = "open"
-        self.sim.configure_box(2000)
+        self.sim.configure_box(200)
         self.sim.additional_forces = self._rocketThrustForce
         self.sim.force_is_velocity_dependent = 1
         self.sim.collision = "none"
@@ -125,9 +130,9 @@ class OrbitalProbeEnv(gym.Env):
         self.fuel = max(0, projectedFuel)
 
         reward = 0
-        reward -= (
-            action[0] / 300
-        )  # Punish the agent for using fuel (incentivizes it to save fuel for critical manuevers)
+        # reward -= (
+        #     action[0] / 300
+        # )  # Punish the agent for using fuel (incentivizes it to save fuel for critical manuevers)
 
         # Convert input into desired deltaV
         self.deltaV[0] = np.cos(action[1] * 2 * np.pi)
@@ -136,49 +141,77 @@ class OrbitalProbeEnv(gym.Env):
             deltaVMagnitude * planetProp.spaceShipThrustProperties["availableDeltaV"]
         )
 
-        # Try to step and stop if things get too close
-        try:
-            self.sim.step()
-        except rebound.Encounter as error:
-            print(error)
+        takingInput = False  # Flag for whether to take input from the policy, ie. loop continously if not
 
-        def rewardScalingFunction(value: float) -> float:
-            return -np.sqrt(value) / 7.07106781187 + 1
+        while not takingInput and not terminated:
+            # Try to step and stop if things get too close
+            try:
+                self.sim.step()
+            except rebound.Encounter as error:
+                terminated = True
 
-        # Find the distance to pluto, and dispense a reward
-        distance = self._getDistanceToPluto()
-        reward += self._progressivizeDistanceReward(
-            distance, self.closestEncounter, rewardScalingFunction
-        )
-        self.closestEncounter = min(
-            distance, self.closestEncounter
-        )  # Update the closest previous encounter
+            def rewardScalingFunction(value: float) -> float:
+                return -np.sqrt(value) / 7.07106781187 + 1
 
-        # We also reward the agent for gaining system energy
-        spaceshipEnergy = self._getSpaceshipEnergy()
-        reward += max(spaceshipEnergy - self.previousHighestEnergy, 0) / 2
-        self.previousHighestEnergy = max(
-            spaceshipEnergy, self.previousHighestEnergy
-        )  # Update the previous highest energy
+            # Find the distance to pluto, and dispense a reward
+            distance = self._getDistanceToPluto()
+            reward += (
+                self._progressivizeDistanceReward(
+                    distance, self.closestEncounter, rewardScalingFunction
+                )
+                * 1000
+            )
+            self.closestEncounter = min(
+                distance, self.closestEncounter
+            )  # Update the closest previous encounter
 
-        if distance <= 0.1:
-            reward += 1
-            reward += self.fuel * 3
-            terminated = True
-        if self._getTimeElapsed() > self.tmax:
-            terminated = True
+            # We also reward the agent for gaining system energy
+            spaceshipEnergy = self._getSpaceshipEnergy()
+            # DIspense a reward for increasing energy up until there is too much energy. 0 energy is the escape energy, so stop giving rewards past near that point.
+            reward += (
+                max(min(spaceshipEnergy, 0) - self.previousHighestEnergy, 0) * 1000 / 2
+            )
+            self.previousHighestEnergy = max(
+                spaceshipEnergy, self.previousHighestEnergy
+            )  # Update the previous highest energy
 
-        if len(self.sim.particles[1:]) == 9:
-            pos = self.lastPositions
-            vs = self.lastVel
-            print(pos[-2])
-            print(pos[-1])
-            print(vs[-2])
-            print(vs[-1])
-            for i in range(10000):
-                self.render()
-        self.lastPositions = self._getBodyPositions()
-        self.lastVel = self._getBodyVelocities()
+            # Terminate on reaching pluto
+            if distance <= 0.1:
+                reward += 1000
+                reward += self.fuel * 3
+                terminated = True
+            # Terminate on reaching time limit
+            if self._getTimeElapsed() > self.tmax:
+                print(
+                    "Closest Encounter: %2.5f,   Highest Energy: %1.5f"
+                    % (self.closestEncounter, self.previousHighestEnergy)
+                )
+                terminated = True
+
+            # Punish the agent for going too far
+            if len(self.sim.particles[1:]) == 9:
+                pos = self.lastPositions
+                vs = self.lastVel
+                return (
+                    {
+                        "bodyPositions": pos,
+                        "bodyVelocities": vs,
+                        "timeElapsed": np.array(
+                            [self._getTimeElapsed()], dtype="float64"
+                        ),
+                        "fuel": np.array([self.fuel], dtype="float64"),
+                    },
+                    reward,
+                    True,
+                    False,
+                    self._get_info(),
+                )
+            self.lastPositions = self._getBodyPositions()
+            self.lastVel = self._getBodyVelocities()
+
+            # If the fuel is not zero, we continue to the next step. Always continue if the rendering option is true.
+            if not self.fuel == 0 or self.rendering == True:
+                takingInput = True
 
         return (
             self._get_obs(),

@@ -86,5 +86,5 @@ orbitalProperties = [
 
 
 spaceShipThrustProperties = {
-    "availableDeltaV": 5000 / 29800  # Convert m/s to rebound units
+    "availableDeltaV": 10000 / 29800  # Convert m/s to rebound units
 }
