@@ -22,7 +22,7 @@ class OrbitalProbeEnv(gym.Env):
     def __init__(
         self,
         render_mode=None,
-        dt=2 * np.pi / 365 / 10,
+        dt=2 * np.pi / 365,
         tmax=2 * np.pi * 100,
         window_size=1024,
     ) -> None:
@@ -54,7 +54,7 @@ class OrbitalProbeEnv(gym.Env):
         )
 
         # Action is direction and magnitude of thrust
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float64)
+        self.action_space = spaces.Discrete(5)
 
         # Set variables for the Pygame rendering
         self.window_size = window_size
@@ -81,12 +81,12 @@ class OrbitalProbeEnv(gym.Env):
         self.sim.integrator = "mercurius"
         self.sim.dt = self.dt  # Default timestep/ decision interval is 1 day
         self.sim.boundary = "open"
-        self.sim.configure_box(200)
+        self.sim.configure_box(400)
         self.sim.additional_forces = self._rocketThrustForce
         self.sim.force_is_velocity_dependent = 1
         self.sim.collision = "none"
         # self.sim.exit_max_distance = 50.0
-        self.sim.ri_mercurius.hillfac = 5
+        self.sim.ri_mercurius.hillfac = 10
         self._initSolarSystem()
 
         # Spaceship properties
@@ -112,36 +112,31 @@ class OrbitalProbeEnv(gym.Env):
         Returns:
             tuple: a tuple containing the next state observation, the reward gain, whether the simulation has terminated, whether the truncation condition is satisfied (always False for our enviroment), and additional info
         """
+        reward = 0  # Start with netural reward
+        terminated = False  # Start with in non-terminate assesment
 
-        action = action * 0.5 + 0.5
+        shipV = np.array([self.sim.particles[-1].vx, self.sim.particles[-1].vy])
+        thrustDirection = shipV / np.linalg.norm(
+            shipV
+        )  # When action is 1 or 0 doesn't matter (posigrade/ no burn)
 
-        # Start with a net neutral reward
-        reward = 0
-        terminated = False
+        thrustMagnitude = 0  # No thrust by default
 
-        action[0] = (
-            action[0] / 100
-        )  # Limit the agent to using 1/50th of his deltaV per day
+        if not action == 0 and self.fuel > 0:
+            self.fuel -= planetProp.spaceShipThrustProperties["thrustPerDT"]
+            thrustMagnitude = (
+                planetProp.spaceShipThrustProperties["thrustPerDT"]
+                * planetProp.spaceShipThrustProperties["availableDeltaV"]
+            )
+            if action == 2:
+                thrustDirection = -thrustDirection  # Retrograde burn
+            if action == 3:
+                thrustDirection = thrustDirection[::-1]  # Radial Burn
+            if action == 4:
+                thrustDirection = -thrustDirection[::-1]  # Anti-Radial Burn
 
-        projectedFuel = self.fuel - action[0]
-        remaningFuel = max(0, projectedFuel)
-        reward += (
-            projectedFuel - remaningFuel
-        ) / 1000  # Punish the agent for trying to use more fuel than it has
-        deltaVMagnitude = min(action[0], self.fuel)
-        self.fuel = max(0, projectedFuel)
-
-        reward = 0
-        # reward -= (
-        #     action[0] / 300
-        # )  # Punish the agent for using fuel (incentivizes it to save fuel for critical manuevers)
-
-        # Convert input into desired deltaV
-        self.deltaV[0] = np.cos(action[1] * 2 * np.pi)
-        self.deltaV[1] = np.sin(action[1] * 2 * np.pi)
-        self.deltaV *= (
-            deltaVMagnitude * planetProp.spaceShipThrustProperties["availableDeltaV"]
-        )
+        # Convert thrust into desired deltaV
+        self.deltaV = thrustDirection * thrustMagnitude
 
         takingInput = False  # Flag for whether to take input from the policy, ie. loop continously if not
 
@@ -151,6 +146,8 @@ class OrbitalProbeEnv(gym.Env):
                 self.sim.step()
             except rebound.Encounter as error:
                 terminated = True
+
+            self.deltaV *= 0  # Clear the thurst after each integration
 
             def rewardScalingFunction(value: float) -> float:
                 return -(value**0.15) / 50**0.15 + 1
@@ -169,11 +166,11 @@ class OrbitalProbeEnv(gym.Env):
 
             # We also reward the agent for gaining system energy
             spaceshipEnergy = self._getSpaceshipEnergy()
+            if spaceshipEnergy > 3:
+                reward -= spaceshipEnergy / 10
             # DIspense a reward for increasing energy up until there is too much energy. 0 energy is the escape energy, so stop giving rewards past near that point.
             reward += (
-                max(min(spaceshipEnergy, 0.1) - self.previousHighestEnergy, 0)
-                * 1000
-                / 4
+                max(min(spaceshipEnergy, 0.1) - self.previousHighestEnergy, 0) * 000 / 4
             )
             self.previousHighestEnergy = max(
                 spaceshipEnergy, self.previousHighestEnergy
@@ -188,6 +185,7 @@ class OrbitalProbeEnv(gym.Env):
                     "Closest Encounter: %2.5f,   Highest Energy: %1.5f,     Success!"
                     % (self.closestEncounter, self.previousHighestEnergy)
                 )
+
             # Terminate on reaching time limit
             if self._getTimeElapsed() > self.tmax:
                 print(
@@ -196,7 +194,7 @@ class OrbitalProbeEnv(gym.Env):
                 )
                 terminated = True
 
-            # Punish the agent for going too far
+            # Terminate and punish on out of bounds
             if len(self.sim.particles[1:]) == 9:
                 pos = self.lastPositions
                 vs = self.lastVel
@@ -204,6 +202,7 @@ class OrbitalProbeEnv(gym.Env):
                     "Closest Encounter: %2.5f,   Highest Energy: %1.5f,     Out of Bounds!"
                     % (self.closestEncounter, self.previousHighestEnergy)
                 )
+                print(pos[-1], vs[-1], self._getTimeElapsed())
                 return (
                     {
                         "bodyPositions": pos,
@@ -213,7 +212,7 @@ class OrbitalProbeEnv(gym.Env):
                         ),
                         "fuel": np.array([self.fuel], dtype="float64"),
                     },
-                    reward - 69,
+                    reward - 400,
                     True,
                     False,
                     self._get_info(),
@@ -222,7 +221,7 @@ class OrbitalProbeEnv(gym.Env):
             self.lastVel = self._getBodyVelocities()
 
             # If the fuel is not zero, we continue to the next step. Always continue if the rendering option is true.
-            if not self.fuel == 0 or self.rendering == True:
+            if self.fuel > 0 or self.rendering == True:
                 takingInput = True
 
         return (
