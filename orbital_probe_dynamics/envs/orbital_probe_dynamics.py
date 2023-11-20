@@ -16,13 +16,13 @@ class OrbitalProbeEnv(gym.Env):
 
     metadata = {
         "render_modes": ["human", "rgb_array"],
-        "render_fps": 256,
+        "render_fps": 512,
     }  # supported render modes and fps
 
     def __init__(
         self,
         render_mode=None,
-        dt=2 * np.pi / 365,
+        dt=2 * np.pi / 365 / 10,
         tmax=2 * np.pi * 100,
         window_size=1024,
     ) -> None:
@@ -54,7 +54,7 @@ class OrbitalProbeEnv(gym.Env):
         )
 
         # Action is direction and magnitude of thrust
-        self.action_space = spaces.Box(low=0, high=1.0, shape=(2,), dtype=np.float64)
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float64)
 
         # Set variables for the Pygame rendering
         self.window_size = window_size
@@ -86,7 +86,7 @@ class OrbitalProbeEnv(gym.Env):
         self.sim.force_is_velocity_dependent = 1
         self.sim.collision = "none"
         # self.sim.exit_max_distance = 50.0
-        self.sim.ri_mercurius.hillfac = 9
+        self.sim.ri_mercurius.hillfac = 5
         self._initSolarSystem()
 
         # Spaceship properties
@@ -113,12 +113,14 @@ class OrbitalProbeEnv(gym.Env):
             tuple: a tuple containing the next state observation, the reward gain, whether the simulation has terminated, whether the truncation condition is satisfied (always False for our enviroment), and additional info
         """
 
+        action = action * 0.5 + 0.5
+
         # Start with a net neutral reward
         reward = 0
         terminated = False
 
         action[0] = (
-            action[0] / 50
+            action[0] / 100
         )  # Limit the agent to using 1/50th of his deltaV per day
 
         projectedFuel = self.fuel - action[0]
@@ -151,7 +153,7 @@ class OrbitalProbeEnv(gym.Env):
                 terminated = True
 
             def rewardScalingFunction(value: float) -> float:
-                return -np.sqrt(value) / 7.07106781187 + 1
+                return -(value**0.15) / 50**0.15 + 1
 
             # Find the distance to pluto, and dispense a reward
             distance = self._getDistanceToPluto()
@@ -169,7 +171,9 @@ class OrbitalProbeEnv(gym.Env):
             spaceshipEnergy = self._getSpaceshipEnergy()
             # DIspense a reward for increasing energy up until there is too much energy. 0 energy is the escape energy, so stop giving rewards past near that point.
             reward += (
-                max(min(spaceshipEnergy, 0) - self.previousHighestEnergy, 0) * 1000 / 2
+                max(min(spaceshipEnergy, 0.1) - self.previousHighestEnergy, 0)
+                * 1000
+                / 4
             )
             self.previousHighestEnergy = max(
                 spaceshipEnergy, self.previousHighestEnergy
@@ -180,6 +184,10 @@ class OrbitalProbeEnv(gym.Env):
                 reward += 1000
                 reward += self.fuel * 3
                 terminated = True
+                print(
+                    "Closest Encounter: %2.5f,   Highest Energy: %1.5f,     Success!"
+                    % (self.closestEncounter, self.previousHighestEnergy)
+                )
             # Terminate on reaching time limit
             if self._getTimeElapsed() > self.tmax:
                 print(
@@ -192,6 +200,10 @@ class OrbitalProbeEnv(gym.Env):
             if len(self.sim.particles[1:]) == 9:
                 pos = self.lastPositions
                 vs = self.lastVel
+                print(
+                    "Closest Encounter: %2.5f,   Highest Energy: %1.5f,     Out of Bounds!"
+                    % (self.closestEncounter, self.previousHighestEnergy)
+                )
                 return (
                     {
                         "bodyPositions": pos,
@@ -201,7 +213,7 @@ class OrbitalProbeEnv(gym.Env):
                         ),
                         "fuel": np.array([self.fuel], dtype="float64"),
                     },
-                    reward,
+                    reward - 69,
                     True,
                     False,
                     self._get_info(),
