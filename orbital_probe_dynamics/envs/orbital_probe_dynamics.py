@@ -128,12 +128,17 @@ class OrbitalProbeEnv(gym.Env):
                 planetProp.spaceShipThrustProperties["thrustPerDT"]
                 * planetProp.spaceShipThrustProperties["availableDeltaV"]
             )
+            reward -= 2
             if action == 2:
                 thrustDirection = -thrustDirection  # Retrograde burn
             if action == 3:
-                thrustDirection = thrustDirection[::-1]  # Radial Burn
+                thrustDirection = np.array(
+                    [-thrustDirection[1], thrustDirection[0]]
+                )  # Radial Burn
             if action == 4:
-                thrustDirection = -thrustDirection[::-1]  # Anti-Radial Burn
+                thrustDirection = np.array(
+                    [thrustDirection[1], -thrustDirection[0]]
+                )  # Radial Burn
 
         # Convert thrust into desired deltaV
         self.deltaV = thrustDirection * thrustMagnitude
@@ -150,7 +155,7 @@ class OrbitalProbeEnv(gym.Env):
             self.deltaV *= 0  # Clear the thurst after each integration
 
             def rewardScalingFunction(value: float) -> float:
-                return -(value**0.15) / 50**0.15 + 1
+                return -(value**0.2) / 50**0.2 + 1
 
             # Find the distance to pluto, and dispense a reward
             distance = self._getDistanceToPluto()
@@ -170,7 +175,9 @@ class OrbitalProbeEnv(gym.Env):
                 reward -= spaceshipEnergy / 10
             # DIspense a reward for increasing energy up until there is too much energy. 0 energy is the escape energy, so stop giving rewards past near that point.
             reward += (
-                max(min(spaceshipEnergy, 0.1) - self.previousHighestEnergy, 0) * 000 / 4
+                max(min(spaceshipEnergy, -0.1) - self.previousHighestEnergy, 0)
+                * 1000
+                / 6
             )
             self.previousHighestEnergy = max(
                 spaceshipEnergy, self.previousHighestEnergy
@@ -341,9 +348,9 @@ class OrbitalProbeEnv(gym.Env):
         self.sim.add(
             m=0,
             r=1.5e-10,  # 20 m radius
-            a=0.05,  # Geosynchronous Orbit *100
+            a=1.1,  # Geosynchronous Orbit *100
             theta=genRandAngle(),
-            primary=self.sim.particles[3],  # Orbiting Earth
+            primary=self.sim.particles[0],  # Around Earth
         )
 
         # =====Notes on the meanings of the simulation parameters=====
@@ -377,7 +384,7 @@ class OrbitalProbeEnv(gym.Env):
         speedSquared = self.sim.particles[-1].vx ** 2 + self.sim.particles[-1].vy ** 2
 
         # Return the sum of the kinetic energy and potential energy
-        return potentialEnergy + speedSquared / 2
+        return potentialEnergy  # + speedSquared / 2
 
     def _progressivizeDistanceReward(
         self, currentValue: float, previousValue: float, rewardFunction: callable

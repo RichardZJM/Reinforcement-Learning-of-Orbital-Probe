@@ -26,10 +26,10 @@ if __name__ == "__main__":
     env_id = "orbitalProbeDynamics-v1"
     num_cpu = 4  # Number of processes to use
     # Create the vectorized environment
-    vec_env = make_vec_env(env_id, n_envs=num_cpu, seed=0, vec_env_cls=DummyVecEnv)
+    vec_env = make_vec_env(env_id, n_envs=num_cpu, seed=0, vec_env_cls=SubprocVecEnv)
 
     policy_kwargs = dict(
-        net_arch=dict(pi=[256, 256, 256], vf=[256, 256, 256]),
+        net_arch=dict(pi=[32, 32, 32, 32, 32, 32], vf=[32, 32, 32, 32, 32, 32]),
     )
     model = PPO(
         "MultiInputPolicy",
@@ -40,9 +40,9 @@ if __name__ == "__main__":
         batch_size=64,
     )
 
-    # ### ===== To train a new model =====
+    ### ===== To train a new model =====
     # model = PPO.load(
-    #     "tempModels/trial7",
+    #     "tempModels/discrete1",
     #     vec_env,
     #     verbose=1,
     #     learning_rate=3e-4,
@@ -50,8 +50,8 @@ if __name__ == "__main__":
     #     batch_size=64,
     # )
     for i in range(1000):
-        model.learn(total_timesteps=5000)
-        model.save("tempModels/trial7")
+        model.learn(total_timesteps=20000)
+        model.save("tempModels/discrete2")
 
     env = gym.make("orbitalProbeDynamics-v1", render_mode=None, window_size=1024)
 
@@ -62,7 +62,7 @@ if __name__ == "__main__":
         window_size=1024,
         dt=2 * np.pi / 365,
     )
-    model = PPO.load("tempModels/trial7")
+    model = PPO.load("tempModels/discrete2")
     print(model)
 
     obs, _ = env.reset(options={"rendering": True})
@@ -72,7 +72,7 @@ if __name__ == "__main__":
 
         obs, rewards, dones, info, _ = env.step(1)
 
-        # print(action, rewards)
+        print(action, rewards)
         env.render()
 
     env.close()
