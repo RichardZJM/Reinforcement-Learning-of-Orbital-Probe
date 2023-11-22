@@ -16,15 +16,17 @@ class OrbitalProbeEnv(gym.Env):
 
     metadata = {
         "render_modes": ["human", "rgb_array"],
-        "render_fps": 512,
+        "render_fps": 60,
     }  # supported render modes and fps
 
     def __init__(
         self,
         render_mode=None,
         dt=2 * np.pi / 365,
-        tmax=2 * np.pi * 100,
+        tmax=2 * np.pi * 20,
         window_size=1024,
+        trainingStage=0,
+        maxDeviation=0.05,
     ) -> None:
         """Initialization of orbital probe enviroment.
 
@@ -36,6 +38,8 @@ class OrbitalProbeEnv(gym.Env):
         super().__init__()
         self.dt = dt
         self.tmax = tmax  # Set the maximum sim time allowed, (1 year = 2pi)
+        self.trainingStage = trainingStage  # Set the current training stage
+        self.maxDeviation = maxDeviation
 
         # Obs is Positions and velocities of each of the 9 planets and the space probe in 2-D
         self.observation_space = spaces.Dict(
@@ -71,7 +75,6 @@ class OrbitalProbeEnv(gym.Env):
         Returns:
             tuple: A tuple that contains the initial observation and extra info of the new initial state.
         """
-        seed = 69  # Temporarily force a deterministic enviroment for testing
         super().reset(seed=seed)  # Reconcile seeding in enviroment
         self.rendering = options["rendering"]
 
@@ -87,11 +90,12 @@ class OrbitalProbeEnv(gym.Env):
         self.sim.collision = "none"
         # self.sim.exit_max_distance = 50.0
         self.sim.ri_mercurius.hillfac = 10
-        self._initSolarSystem()
 
         # Spaceship properties
         self.fuel = 1
         self.deltaV = np.array([0, 0], dtype="float64")
+
+        self._initSolarSystem()
 
         # Find the initial distance to pluto
         self.closestEncounter = self._getDistanceToPluto()
@@ -128,7 +132,7 @@ class OrbitalProbeEnv(gym.Env):
                 planetProp.spaceShipThrustProperties["thrustPerDT"]
                 * planetProp.spaceShipThrustProperties["availableDeltaV"]
             )
-            reward -= 2
+            reward -= 2.5
             if action == 2:
                 thrustDirection = -thrustDirection  # Retrograde burn
             if action == 3:
@@ -186,7 +190,7 @@ class OrbitalProbeEnv(gym.Env):
             # Terminate on reaching pluto
             if distance <= 0.1:
                 reward += 1000
-                reward += self.fuel * 3
+                reward += self.fuel * 3000
                 terminated = True
                 print(
                     "Closest Encounter: %2.5f,   Highest Energy: %1.5f,     Success!"
@@ -209,7 +213,7 @@ class OrbitalProbeEnv(gym.Env):
                     "Closest Encounter: %2.5f,   Highest Energy: %1.5f,     Out of Bounds!"
                     % (self.closestEncounter, self.previousHighestEnergy)
                 )
-                print(pos[-1], vs[-1], self._getTimeElapsed())
+                # print(pos[-1], vs[-1], self._getTimeElapsed())
                 return (
                     {
                         "bodyPositions": pos,
@@ -322,13 +326,19 @@ class OrbitalProbeEnv(gym.Env):
     def _initSolarSystem(self) -> None:
         """Helper function to intialize the simulation with the solar system."""
 
-        def genRandAngle() -> float:
+        def randomAngleDeviation() -> float:
             """Helper function to generate random angles
 
             Returns:
                 float: Random angle in circle (rad)
             """
-            return self.np_random.uniform(low=0, high=2 * np.pi)
+            out = self.np_random.uniform(low=-np.pi, high=np.pi)
+            return out * self.maxDeviation
+
+        def randomPercentDeviaton(baseValue: float):
+            return (
+                baseValue * self.np_random.uniform(low=-1, high=1) * self.maxDeviation
+            )
 
         # ====Now, add the orbits of each of the bodies, with no inclination (ie. 2D)=====
         self.sim.add(m=1.0, r=0.005)  # Sun
@@ -341,17 +351,31 @@ class OrbitalProbeEnv(gym.Env):
                 a=planetProperties["a"],
                 e=planetProperties["e"],
                 omega=planetProperties["omega"],
-                theta=genRandAngle(),
+                theta=planetProperties["baseTheta"] + randomAngleDeviation(),
             )
 
-        # Add the spaceship in orbit around the earth
-        self.sim.add(
-            m=0,
-            r=1.5e-10,  # 20 m radius
-            a=1.1,  # Geosynchronous Orbit *100
-            theta=genRandAngle(),
-            primary=self.sim.particles[0],  # Around Earth
-        )
+        if self.trainingStage == 1:
+            self.sim.add(
+                m=0,
+                r=1.5e-10,  # 20 m radius
+                a=20 + randomPercentDeviaton(20),
+                theta=-0.5,
+            )
+            self.sim.particles[-1].vx = (
+                0.7 + self.np_random.uniform(low=-1, high=1) * self.maxDeviation
+            )
+            self.sim.particles[-1].vx = 0.5 + randomPercentDeviaton(1)
+            self.sim.particles[-1].vy = 0.38 + randomPercentDeviaton(0.2)
+            self.fuel = 0.3 + randomPercentDeviaton(1)
+        else:
+            # Add the spaceship in orbit around the earth
+            self.sim.add(
+                m=0,
+                r=1.5e-10,  # 20 m radius
+                a=1.1,  # Geosynchronous Orbit *100
+                theta=4.262976026939784 + randomAngleDeviation(),
+                primary=self.sim.particles[0],  # Around Earth
+            )
 
         # =====Notes on the meanings of the simulation parameters=====
         # m = mass,
