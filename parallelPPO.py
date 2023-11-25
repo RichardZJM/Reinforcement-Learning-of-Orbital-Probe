@@ -25,9 +25,9 @@ def make_env(env_id: str, rank: int, seed: int = 0):
 
 # Save a checkpoint every 1000 steps
 checkpoint_callback = CheckpointCallback(
-    save_freq=5000,
-    save_path="./tempCuriculumModel2/",
-    name_prefix="stage1",
+    save_freq=30000,
+    save_path="./continuousCurriculum/",
+    name_prefix="stage2",
     save_replay_buffer=True,
     save_vecnormalize=True,
     verbose=2,
@@ -42,22 +42,30 @@ if __name__ == "__main__":
 
     policy_kwargs = dict(
         net_arch=dict(
-            pi=[256, 256, 256, 256, 256, 256], vf=[256, 256, 256, 256, 256, 256]
+            pi=[256, 256, 256, 256, 256, 256],
+            qf=[256, 256, 256, 256, 256, 256],
         ),
     )
-    model = PPO(
+    model = TQC(
         "MultiInputPolicy",
         vec_env,
         verbose=1,
         learning_rate=3e-4,
-        gamma=0.999,
+        gamma=0.9999,
         batch_size=64,
+        top_quantiles_to_drop_per_net=2,
         policy_kwargs=policy_kwargs,
+        replay_buffer_class=HerReplayBuffer,
+        replay_buffer_kwargs=dict(
+            n_sampled_goal=4,
+            goal_selection_strategy="future",
+        ),
+        buffer_size=int(1e6),
     )
 
-    ###### ===== To train a new model =====
-    # model = PPO.load(
-    #     "tempCuriculumModel/stage1_240000_steps.zip",
+    ## ===== To train a new model =====
+    # model = TQC.load(
+    #     "tempCuriculumModel3/stage1_52200000_steps.zip",
     #     vec_env,
     #     verbose=1,
     #     learning_rate=3e-4,
@@ -65,7 +73,7 @@ if __name__ == "__main__":
     #     batch_size=64,
     # )
     print(model.policy)
-    model.learn(total_timesteps=1e9, callback=checkpoint_callback)
+    model.learn(total_timesteps=1e10, callback=checkpoint_callback)
 
     env = gym.make("orbitalProbeDynamics-v1", render_mode=None, window_size=1024)
 
@@ -74,17 +82,17 @@ if __name__ == "__main__":
         "orbitalProbeDynamics-v1",
         render_mode="human",
         window_size=1024,
-        trainingStage=1,
-        maxDeviation=0.05,
+        trainingStage=2,
+        maxDeviation=1,
     )
-    model = PPO.load("tempModels/discrete2")
+    # model = TQC.load("tempCuriculumModel3/stage2_24480000_steps.zip")
 
     obs, _ = env.reset(options={"rendering": True})
 
     for i in range(30000):
         action, _states = model.predict(obs, deterministic=True)
 
-        obs, rewards, dones, info, _ = env.step(1)
+        obs, rewards, dones, info, _ = env.step(action)
 
         print(action, rewards)
         env.render()

@@ -16,17 +16,17 @@ class OrbitalProbeEnv(gym.Env):
 
     metadata = {
         "render_modes": ["human", "rgb_array"],
-        "render_fps": 60,
+        "render_fps": 120,
     }  # supported render modes and fps
 
     def __init__(
         self,
         render_mode=None,
         dt=2 * np.pi / 365,
-        tmax=2 * np.pi * 20,
+        tmax=2 * np.pi * 13,
         window_size=1024,
         trainingStage=0,
-        maxDeviation=0.05,
+        maxDeviation=0.003,
     ) -> None:
         """Initialization of orbital probe enviroment.
 
@@ -50,15 +50,11 @@ class OrbitalProbeEnv(gym.Env):
                 "bodyVelocities": spaces.Box(
                     low=-np.inf, high=np.inf, shape=(10, 2), dtype=np.float64
                 ),
-                "timeElapsed": spaces.Box(
-                    low=0, high=np.inf, shape=(1,), dtype=np.float64
-                ),
-                "fuel": spaces.Box(low=0, high=1, shape=(1,), dtype=np.float64),
             }
         )
 
         # Action is direction and magnitude of thrust
-        self.action_space = spaces.Discrete(5)
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float64)
 
         # Set variables for the Pygame rendering
         self.window_size = window_size
@@ -84,7 +80,7 @@ class OrbitalProbeEnv(gym.Env):
         self.sim.integrator = "mercurius"
         self.sim.dt = self.dt  # Default timestep/ decision interval is 1 day
         self.sim.boundary = "open"
-        self.sim.configure_box(400)
+        self.sim.configure_box(200)
         self.sim.additional_forces = self._rocketThrustForce
         self.sim.force_is_velocity_dependent = 1
         self.sim.collision = "none"
@@ -116,36 +112,27 @@ class OrbitalProbeEnv(gym.Env):
         Returns:
             tuple: a tuple containing the next state observation, the reward gain, whether the simulation has terminated, whether the truncation condition is satisfied (always False for our enviroment), and additional info
         """
-        reward = 0  # Start with netural reward
-        terminated = False  # Start with in non-terminate assesment
+        action = action * 0.5 + 0.5  # Convert from normalized input
 
-        shipV = np.array([self.sim.particles[-1].vx, self.sim.particles[-1].vy])
-        thrustDirection = shipV / np.linalg.norm(
-            shipV
-        )  # When action is 1 or 0 doesn't matter (posigrade/ no burn)
+        # Start with a net neutral reward
+        reward = 0
+        terminated = False
 
-        thrustMagnitude = 0  # No thrust by default
+        action[0] = (
+            action[0] * planetProp.spaceShipThrustProperties["thrustPerDT"]
+        )  # Limit the agent to using a fraction of his deltaV per day
 
-        if not action == 0 and self.fuel > 0:
-            self.fuel -= planetProp.spaceShipThrustProperties["thrustPerDT"]
-            thrustMagnitude = (
-                planetProp.spaceShipThrustProperties["thrustPerDT"]
-                * planetProp.spaceShipThrustProperties["availableDeltaV"]
-            )
-            reward -= 2.5
-            if action == 2:
-                thrustDirection = -thrustDirection  # Retrograde burn
-            if action == 3:
-                thrustDirection = np.array(
-                    [-thrustDirection[1], thrustDirection[0]]
-                )  # Radial Burn
-            if action == 4:
-                thrustDirection = np.array(
-                    [thrustDirection[1], -thrustDirection[0]]
-                )  # Radial Burn
+        projectedFuel = self.fuel - action[0]
+        remaningFuel = max(0, projectedFuel)
+        deltaVMagnitude = min(action[0], self.fuel)
+        # self.fuel = max(0, projectedFuel)
 
-        # Convert thrust into desired deltaV
-        self.deltaV = thrustDirection * thrustMagnitude
+        # Convert input into desired deltaV
+        self.deltaV[0] = np.cos(action[1] * 2 * np.pi)
+        self.deltaV[1] = np.sin(action[1] * 2 * np.pi)
+        self.deltaV *= (
+            deltaVMagnitude * planetProp.spaceShipThrustProperties["availableDeltaV"]
+        )
 
         takingInput = False  # Flag for whether to take input from the policy, ie. loop continously if not
 
@@ -223,7 +210,7 @@ class OrbitalProbeEnv(gym.Env):
                         ),
                         "fuel": np.array([self.fuel], dtype="float64"),
                     },
-                    reward - 400,
+                    reward,
                     True,
                     False,
                     self._get_info(),
@@ -333,6 +320,8 @@ class OrbitalProbeEnv(gym.Env):
                 float: Random angle in circle (rad)
             """
             out = self.np_random.uniform(low=-np.pi, high=np.pi)
+            if self.trainingStage == 2:
+                return out
             return out * self.maxDeviation
 
         def randomPercentDeviaton(baseValue: float):
@@ -358,15 +347,32 @@ class OrbitalProbeEnv(gym.Env):
             self.sim.add(
                 m=0,
                 r=1.5e-10,  # 20 m radius
-                a=20 + randomPercentDeviaton(20),
-                theta=-0.5,
+                a=35 + randomPercentDeviaton(1),
+                theta=0,
             )
             self.sim.particles[-1].vx = (
                 0.7 + self.np_random.uniform(low=-1, high=1) * self.maxDeviation
             )
-            self.sim.particles[-1].vx = 0.5 + randomPercentDeviaton(1)
-            self.sim.particles[-1].vy = 0.38 + randomPercentDeviaton(0.2)
-            self.fuel = 0.3 + randomPercentDeviaton(1)
+            self.sim.particles[-1].vx = 0.5 + randomPercentDeviaton(0.5)
+            self.sim.particles[-1].vy = 0.4 + randomPercentDeviaton(0.38)
+            self.fuel = 0.1 + randomPercentDeviaton(0.2)
+            self.fuelPunishment = 0
+
+        if self.trainingStage == 2:
+            self.sim.add(
+                m=0,
+                r=1.5e-10,  # 20 m radius
+                a=31 + randomPercentDeviaton(1),
+                e=0.2488,
+                omega=113.834 / 180 * np.pi,
+                theta=self.sim.particles[-1].theta - 0.5,
+            )
+
+            self.sim.particles[-1].vx *= 2 + randomPercentDeviaton(0.3)
+            self.sim.particles[-1].vy *= 2 + randomPercentDeviaton(0.3)
+
+            self.fuel = 0.1 + randomPercentDeviaton(0.2)
+            self.fuelPunishment = 0
         else:
             # Add the spaceship in orbit around the earth
             self.sim.add(
@@ -376,6 +382,8 @@ class OrbitalProbeEnv(gym.Env):
                 theta=4.262976026939784 + randomAngleDeviation(),
                 primary=self.sim.particles[0],  # Around Earth
             )
+            self.fuel = 1
+            self.fuelPunishment = 3
 
         # =====Notes on the meanings of the simulation parameters=====
         # m = mass,
@@ -464,8 +472,8 @@ class OrbitalProbeEnv(gym.Env):
         return {
             "bodyPositions": self._getBodyPositions(),
             "bodyVelocities": self._getBodyVelocities(),
-            "timeElapsed": np.array([self._getTimeElapsed()], dtype="float64"),
-            "fuel": np.array([self.fuel], dtype="float64"),
+            # "timeElapsed": np.array([self._getTimeElapsed()], dtype="float64"),
+            # "fuel": np.array([self.fuel], dtype="float64"),
         }
 
     def _get_info(self) -> dict:
