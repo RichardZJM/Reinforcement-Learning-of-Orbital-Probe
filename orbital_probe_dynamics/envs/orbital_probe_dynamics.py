@@ -23,7 +23,7 @@ class OrbitalProbeEnv(gym.Env):
         self,
         render_mode=None,
         dt=2 * np.pi / 365,
-        tmax=2 * np.pi * 13,
+        tmax=2 * np.pi * 100,
         window_size=1024,
         trainingStage=0,
         maxDeviation=0.003,
