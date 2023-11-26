@@ -25,8 +25,8 @@ def make_env(env_id: str, rank: int, seed: int = 0):
 
 # Save a checkpoint every 1000 steps
 checkpoint_callback = CheckpointCallback(
-    save_freq=30000,
-    save_path="./continuousCurriculum/",
+    save_freq=90000,
+    save_path="./tempContinuousCurriculum/",
     name_prefix="stage2",
     save_replay_buffer=True,
     save_vecnormalize=True,
@@ -40,27 +40,17 @@ if __name__ == "__main__":
     # Create the vectorized environment
     vec_env = make_vec_env(env_id, n_envs=num_cpu, seed=0, vec_env_cls=SubprocVecEnv)
 
-    policy_kwargs = dict(
-        net_arch=dict(
-            pi=[256, 256, 256, 256, 256, 256],
-            qf=[256, 256, 256, 256, 256, 256],
-        ),
-    )
+    policy_kwargs = dict(net_arch=[256, 256, 256, 256])
     model = TQC(
         "MultiInputPolicy",
         vec_env,
         verbose=1,
         learning_rate=3e-4,
-        gamma=0.9999,
+        gamma=0.999,
         batch_size=64,
         top_quantiles_to_drop_per_net=2,
         policy_kwargs=policy_kwargs,
-        replay_buffer_class=HerReplayBuffer,
-        replay_buffer_kwargs=dict(
-            n_sampled_goal=4,
-            goal_selection_strategy="future",
-        ),
-        buffer_size=int(1e6),
+        tensorboard_log="./modelTensorBoard/",
     )
 
     ## ===== To train a new model =====

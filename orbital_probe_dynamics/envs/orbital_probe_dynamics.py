@@ -23,9 +23,9 @@ class OrbitalProbeEnv(gym.Env):
         self,
         render_mode=None,
         dt=2 * np.pi / 365,
-        tmax=2 * np.pi * 100,
+        tmax=2 * np.pi * 13,
         window_size=1024,
-        trainingStage=0,
+        trainingStage=2,
         maxDeviation=0.003,
     ) -> None:
         """Initialization of orbital probe enviroment.
@@ -134,93 +134,82 @@ class OrbitalProbeEnv(gym.Env):
             deltaVMagnitude * planetProp.spaceShipThrustProperties["availableDeltaV"]
         )
 
-        takingInput = False  # Flag for whether to take input from the policy, ie. loop continously if not
+        # Try to step and stop if things get too close
+        try:
+            self.sim.step()
+        except rebound.Encounter as error:
+            terminated = True
 
-        while not takingInput and not terminated:
-            # Try to step and stop if things get too close
-            try:
-                self.sim.step()
-            except rebound.Encounter as error:
-                terminated = True
+        self.deltaV *= 0  # Clear the thurst after each integration
 
-            self.deltaV *= 0  # Clear the thurst after each integration
+        def rewardScalingFunction(value: float) -> float:
+            return -(value**0.2) / 50**0.2 + 1
 
-            def rewardScalingFunction(value: float) -> float:
-                return -(value**0.2) / 50**0.2 + 1
-
-            # Find the distance to pluto, and dispense a reward
-            distance = self._getDistanceToPluto()
-            reward += (
-                self._progressivizeDistanceReward(
-                    distance, self.closestEncounter, rewardScalingFunction
-                )
-                * 1000
+        # Find the distance to pluto, and dispense a reward
+        distance = self._getDistanceToPluto()
+        reward += (
+            self._progressivizeDistanceReward(
+                distance, self.closestEncounter, rewardScalingFunction
             )
-            self.closestEncounter = min(
-                distance, self.closestEncounter
-            )  # Update the closest previous encounter
+            * 1000
+        )
+        self.closestEncounter = min(
+            distance, self.closestEncounter
+        )  # Update the closest previous encounter
 
-            # We also reward the agent for gaining system energy
-            spaceshipEnergy = self._getSpaceshipEnergy()
-            if spaceshipEnergy > 3:
-                reward -= spaceshipEnergy / 10
-            # DIspense a reward for increasing energy up until there is too much energy. 0 energy is the escape energy, so stop giving rewards past near that point.
-            reward += (
-                max(min(spaceshipEnergy, -0.1) - self.previousHighestEnergy, 0)
-                * 1000
-                / 6
+        # We also reward the agent for gaining system energy
+        spaceshipEnergy = self._getSpaceshipEnergy()
+        if spaceshipEnergy > 3:
+            reward -= spaceshipEnergy / 10
+        # DIspense a reward for increasing energy up until there is too much energy. 0 energy is the escape energy, so stop giving rewards past near that point.
+        reward += (
+            max(min(spaceshipEnergy, -0.1) - self.previousHighestEnergy, 0) * 1000 / 6
+        )
+        self.previousHighestEnergy = max(
+            spaceshipEnergy, self.previousHighestEnergy
+        )  # Update the previous highest energy
+
+        # Terminate on reaching pluto
+        if distance <= 0.1:
+            reward += 1000
+            reward += self.fuel * 3000
+            terminated = True
+            print(
+                "Closest Encounter: %2.5f,   Highest Energy: %1.5f,     Success!"
+                % (self.closestEncounter, self.previousHighestEnergy)
             )
-            self.previousHighestEnergy = max(
-                spaceshipEnergy, self.previousHighestEnergy
-            )  # Update the previous highest energy
 
-            # Terminate on reaching pluto
-            if distance <= 0.1:
-                reward += 1000
-                reward += self.fuel * 3000
-                terminated = True
-                print(
-                    "Closest Encounter: %2.5f,   Highest Energy: %1.5f,     Success!"
-                    % (self.closestEncounter, self.previousHighestEnergy)
-                )
+        # Terminate on reaching time limit
+        if self._getTimeElapsed() > self.tmax:
+            print(
+                "Closest Encounter: %2.5f,   Highest Energy: %1.5f"
+                % (self.closestEncounter, self.previousHighestEnergy)
+            )
+            terminated = True
 
-            # Terminate on reaching time limit
-            if self._getTimeElapsed() > self.tmax:
-                print(
-                    "Closest Encounter: %2.5f,   Highest Energy: %1.5f"
-                    % (self.closestEncounter, self.previousHighestEnergy)
-                )
-                terminated = True
-
-            # Terminate and punish on out of bounds
-            if len(self.sim.particles[1:]) == 9:
-                pos = self.lastPositions
-                vs = self.lastVel
-                print(
-                    "Closest Encounter: %2.5f,   Highest Energy: %1.5f,     Out of Bounds!"
-                    % (self.closestEncounter, self.previousHighestEnergy)
-                )
-                # print(pos[-1], vs[-1], self._getTimeElapsed())
-                return (
-                    {
-                        "bodyPositions": pos,
-                        "bodyVelocities": vs,
-                        "timeElapsed": np.array(
-                            [self._getTimeElapsed()], dtype="float64"
-                        ),
-                        "fuel": np.array([self.fuel], dtype="float64"),
-                    },
-                    reward,
-                    True,
-                    False,
-                    self._get_info(),
-                )
-            self.lastPositions = self._getBodyPositions()
-            self.lastVel = self._getBodyVelocities()
-
-            # If the fuel is not zero, we continue to the next step. Always continue if the rendering option is true.
-            if self.fuel > 0 or self.rendering == True:
-                takingInput = True
+        # Terminate and punish on out of bounds
+        if len(self.sim.particles[1:]) == 9:
+            pos = self.lastPositions
+            vs = self.lastVel
+            print(
+                "Closest Encounter: %2.5f,   Highest Energy: %1.5f,     Out of Bounds!"
+                % (self.closestEncounter, self.previousHighestEnergy)
+            )
+            # print(pos[-1], vs[-1], self._getTimeElapsed())
+            return (
+                {
+                    "bodyPositions": pos,
+                    "bodyVelocities": vs,
+                    "timeElapsed": np.array([self._getTimeElapsed()], dtype="float64"),
+                    "fuel": np.array([self.fuel], dtype="float64"),
+                },
+                reward,
+                True,
+                False,
+                self._get_info(),
+            )
+        self.lastPositions = self._getBodyPositions()
+        self.lastVel = self._getBodyVelocities()
 
         return (
             self._get_obs(),
