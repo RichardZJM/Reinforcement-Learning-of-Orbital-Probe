@@ -1,6 +1,6 @@
 # About
 
-This is a reinforcement learning environment based on the Gymnasium API, https://gymnasium.farama.org. It is a simulation of a space probe which travels from Earth to a target near the outside of the solar system. The probe does not have sufficient $\Delta V$ to directly thrust to the outer planet, requiring the agent to learn the foundations of orbital dynamics, especially gravity assists. Training currently using SB3, https://github.com/DLR-RM/stable-baselines3/tree/master.
+This is a reinforcement learning environment based on the Gymnasium API, https://gymnasium.farama.org. It is a simulation of a space probe which travels from Earth to Pluto. The probe does not have sufficient $\Delta V$ to directly thrust to the outer planet, requiring the agent to learn the foundations of orbital dynamics, especially gravity assists. Training currently using stable baselines 3, https://github.com/DLR-RM/stable-baselines3/tree/master and stable baselines contrib.
 
 # Installation
 

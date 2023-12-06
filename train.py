@@ -63,19 +63,19 @@ if __name__ == "__main__":
         top_quantiles_to_drop_per_net=2,  # Very important, controls the overestimation bias correction
         policy_kwargs=policy_kwargs,
         tensorboard_log="./modelTensorBoard/",
-    )  # Generate the model and experiment with the hyperparameters as needed
+    )  # Generate a new model and experiment with the hyperparameters as needed
 
     ## ===== To train a new model =====
     # model = TQC.load(
-    #     "tempContinuousCurriculum/stage2_6120000_steps.zip",
+    #     "models/bestFinalModel.zip",
     #     vec_env,
     #     verbose=1,
     #     learning_rate=3e-4,
     #     gamma=0.999,
     #     batch_size=64,
-    # )
+    # ) # Loads an existing model
     # print(model.policy)
-    # model.learn(total_timesteps=1e10, callback=checkpoint_callback)
+    # model.learn(total_timesteps=1e10, callback=checkpoint_callback)   # Learns the model
 
     #### ===== To load an existing model =====
     env = gym.make(
