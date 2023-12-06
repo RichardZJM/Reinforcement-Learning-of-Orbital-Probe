@@ -2,6 +2,7 @@
 """
 import numpy as np
 
+# The colours of all the planets when rendered
 renderColourProperties = [
     (253, 184, 19),  # SUN
     (177, 173, 173),  # Mecury
@@ -16,8 +17,10 @@ renderColourProperties = [
     (255, 255, 255),  # Player
 ]
 
+# The apparent size of the planets when rendered
 renderSizeProperties = 2 * np.array([14, 4, 5, 6, 5, 10, 8, 7, 8, 4, 2])
 
+# The orbital properties of the planets
 orbitalProperties = [
     {
         "m": 3.3011e23 * 5.02785e-31,
@@ -93,7 +96,7 @@ orbitalProperties = [
     },  # Pluto
 ]
 
-
+# The thrust and fuel capabilities of the spacecraft
 spaceShipThrustProperties = {
     "availableDeltaV": 5000 / 29800,  # Convert m/s to rebound units
     "thrustPerDT": 1 / 100,  # The amount of thrust the spaceship uses per burn
