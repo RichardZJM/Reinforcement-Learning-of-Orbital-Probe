@@ -162,3 +162,8 @@ cython_debug/
 # Animation Files (large and unecessary)
 **anim/**
 **anim
+
+tempModels
+tempDiscreteModels
+temp**
+modelTensorBoard

@@ -148,7 +148,7 @@ op = rebound.OrbitPlot(sim, Narc=300)
 for i in range(300):
     sim.integrate(sim.t + 10)
     op.update()
-    op.fig.savefig("./anim/out_%03d.png" % i)
+    # op.fig.savefig("./anim/out_%03d.png" % i)
 
 #
 # sim.integrate(tmax)

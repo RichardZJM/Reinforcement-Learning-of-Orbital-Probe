@@ -5,15 +5,21 @@ This is a reinforcement learning environment based on the Gymnasium API, https:/
 # Installation
 
 Clone the custom environment and navigate into its root folder (orbital_probe_rl)
-It is highly recommended that you use a virtual environment. Install the custom environment by running:
+It is highly recommended that you use a virtual environment. Install the custom environment dependencies by running:
 
 ```bash
 pip install -e orbital_probe_dynamics
 ```
 
+Perform training or visualize a trained model by running `train.py`.
+
+```bash
+python train.py
+```
+
 # Important files:
 
-| File Name                                             | Description                                                                                                                                                      |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| orbital_probe_dynamics/envs/orbital_probe_dynamics.py | Implementation of the environment using the Rebound simulation package.                                                                                          |
-| ppo_training.py                                       | An example training file that utilizes the environment and Gymnasium. You should create a similar file for each training algorithm you want to use. |
+| File Name                                             | Description                                                                                                           |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| orbital_probe_dynamics/envs/orbital_probe_dynamics.py | Implementation of the environment using the Rebound simulation package.                                               |
+| train.py                                              | An example training file that utilizes the environment and Gymnasium. Runs the simulation and can visualize as needed |
